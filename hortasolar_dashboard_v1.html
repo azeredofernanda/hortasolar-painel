@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  HortaSolar — Painel ThingSpeak
+  Versão: v1 (2026-11-16)
+  Canais públicos: 3453644, 3453646, 3453647, 3453736
+  Gráficos incorporados via iframe (API de gráficos do ThingSpeak), atualização automática.
+-->
+<title>HortaSolar · Painel ThingSpeak (v1)</title>
+<style>
+  :root {
+    --bg: #f4f4f2;
+    --surface: #ffffff;
+    --border: #e2e1dc;
+    --border-strong: #c9c8c2;
+    --text: #0b0b0b;
+    --text-2: #52514e;
+    --muted: #7a7974;
+    --accent: #2a78d6;
+    --drop: #e8f1fc;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 90px; }
+  body {
+    margin: 0;
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ---------- Cabeçalho ---------- */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 8px 24px;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  h1 .ver { font-weight: 500; color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .sub { color: var(--text-2); font-size: 12.5px; margin-top: 2px; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  button {
+    font: inherit; font-size: 12.5px;
+    padding: 5px 11px;
+    border: 1px solid var(--border-strong); border-radius: 7px;
+    background: var(--surface); color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { background: #f0efec; }
+  button:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .toast {
+    font-size: 12.5px; color: var(--text-2);
+    min-width: 0; max-width: 340px;
+  }
+
+  /* ---------- Faixas ---------- */
+  main { padding: 16px 20px 48px; display: flex; flex-direction: column; gap: 20px; }
+  .zone-head {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
+    margin: 0 0 8px;
+  }
+  .zone-head h2 { font-size: 15.5px; margin: 0; font-weight: 650; }
+  .zone-head .desc { color: var(--text-2); font-size: 12.5px; }
+  .zone-head .count { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .zone-head .toggle {
+    border: none; background: none; padding: 0 2px; font-size: 13px; color: var(--text-2);
+    width: 20px; text-align: center;
+  }
+  .zone.collapsed .grid { display: none; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(430px, 100%), 1fr));
+    gap: 12px;
+    min-height: 72px;
+    padding: 6px;
+    margin: -6px;
+    border: 2px dashed transparent;
+    border-radius: 12px;
+  }
+  .grid.is-empty {
+    border-color: var(--border-strong);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0; padding: 18px;
+  }
+  .grid.is-empty::before {
+    content: "Arraste gráficos para cá, ou use o menu “Mover para” de cada gráfico";
+    color: var(--muted); font-size: 12.5px; text-align: center;
+  }
+  body.dragging .grid { border-color: var(--border-strong); }
+  .zone.over .grid, .zone.over.collapsed .zone-head {
+    background: var(--drop); border-color: var(--accent);
+  }
+  .zone.collapsed .zone-head { padding: 6px 8px; margin: 0 -8px; border-radius: 8px; border: 2px dashed transparent; }
+  body.dragging .zone.collapsed .zone-head { border-color: var(--border-strong); }
+
+  /* ---------- Cartões ---------- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    min-width: 0;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px 5px 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .drag-area {
+    display: flex; align-items: center; gap: 8px;
+    flex: 1; min-width: 0;
+    cursor: grab; user-select: none;
+    padding: 2px 0;
+  }
+  .drag-area:active { cursor: grabbing; }
+  .handle { color: var(--muted); font-size: 15px; line-height: 1; padding: 0 2px 0 4px; }
+  .chip { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .titles { min-width: 0; }
+  .title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-head select {
+    font: inherit; font-size: 12px;
+    padding: 3px 4px;
+    border: 1px solid var(--border-strong); border-radius: 6px;
+    background: var(--surface); color: var(--text);
+    flex: none; max-width: 120px;
+  }
+  .card-head a.open {
+    color: var(--text-2); text-decoration: none; font-size: 14px;
+    padding: 2px 4px; border-radius: 5px; flex: none;
+  }
+  .card-head a.open:hover { background: #f0efec; color: var(--text); }
+  .card iframe { display: block; width: 100%; height: 260px; border: 0; background: #fff; }
+  .card.drag-src { opacity: 0.4; }
+
+  /* Durante o arrasto os iframes não capturam o rato */
+  body.dragging iframe { pointer-events: none; }
+
+  .drop-indicator {
+    position: fixed; z-index: 30; pointer-events: none;
+    width: 4px; border-radius: 2px; background: var(--accent);
+    display: none;
+  }
+
+  @media (max-width: 700px) {
+    header { position: static; }
+    main { padding: 12px 12px 40px; }
+  }
+
+  footer { color: var(--muted); font-size: 12px; padding: 0 20px 24px; }
+  footer code { font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>HortaSolar · Painel ThingSpeak <span class="ver">v1</span></h1>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="toolbar">
+    <span class="toast" id="toast" role="status" aria-live="polite"></span>
+    <button type="button" id="btn-reload" title="Recarrega todos os gráficos">Recarregar gráficos</button>
+    <button type="button" id="btn-export" title="Baixa o layout atual num arquivo .json">Exportar layout</button>
+    <button type="button" id="btn-import" title="Carrega um layout salvo antes">Importar layout</button>
+    <button type="button" id="btn-reset" title="Volta à distribuição original dos gráficos">Restaurar padrão</button>
+    <input type="file" id="file-import" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<main id="zones"></main>
+
+<footer id="footer"></footer>
+
+<div class="drop-indicator" id="indicator"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===================== CONFIGURAÇÃO =====================
+  const VERSION   = "v1";
+  const DAYS      = 3;     // janela de tempo (dias)
+  const RESULTS   = 1000;  // máximo de pontos por gráfico
+  const UPDATE_S  = 60;    // intervalo de atualização automática (segundos)
+  const CHART_H   = 260;   // altura de cada gráfico (px)
+
+  const CH = { 1: 3453644, 2: 3453646, 3: 3453647, 4: 3453736 };
+
+  const TYPES = {
+    moist: { label: "Umidade do solo",     color: "#2a78d6" },
+    soilt: { label: "Temperatura do solo", color: "#eb6834" },
+    airt:  { label: "Temperatura do ar",   color: "#e34948" },
+    airh:  { label: "Umidade do ar",       color: "#1baf7a" },
+    light: { label: "Luminosidade",        color: "#6250d6" },
+    sys:   { label: "Sistema",             color: "#008300" }
+  };
+
+  // Faixas (a ordem aqui é a ordem na página)
+  const ZONES = [
+    { id: "f1",   name: "Faixa 1",   desc: "sob a fileira de painéis" },
+    { id: "f2",   name: "Faixa 2",   desc: "entre fileiras de painéis" },
+    { id: "f3",   name: "Faixa 3",   desc: "controle, sem painéis" },
+    { id: "none", name: "Sem faixa", desc: "gráficos ainda não atribuídos a uma faixa" }
+  ];
+
+  // Todos os campos dos 4 canais.
+  // canal (1–4), campo (1–8), nome do campo no ThingSpeak, tipo, faixa padrão
+  const FIELDS = [
+    // Canal 1 — 3453644
+    { c: 1, f: 1, name: "soil_moisture_ks0510_1",  type: "moist", zone: "none" },
+    { c: 1, f: 2, name: "soil_moisture_ks0510_2",  type: "moist", zone: "none" },
+    { c: 1, f: 3, name: "soil_moisture_sen0308_1", type: "moist", zone: "none" },
+    { c: 1, f: 4, name: "soil_moisture_sen0308_2", type: "moist", zone: "none" },
+    { c: 1, f: 5, name: "soil_temp_1",             type: "soilt", zone: "none" },
+    { c: 1, f: 6, name: "soil_temp_2",             type: "soilt", zone: "none" },
+    { c: 1, f: 7, name: "soil_temp_3",             type: "soilt", zone: "none" },
+    { c: 1, f: 8, name: "soil_temp_4",             type: "soilt", zone: "none" },
+    // Canal 2 — 3453646
+    { c: 2, f: 1, name: "soil_temp_5",             type: "soilt", zone: "none" },
+    { c: 2, f: 2, name: "light_1",                 type: "light", zone: "none" },
+    { c: 2, f: 3, name: "light_2",                 type: "light", zone: "none" },
+    { c: 2, f: 4, name: "air_temp_1",              type: "airt",  zone: "none" },
+    { c: 2, f: 5, name: "air_humidity_1",          type: "airh",  zone: "none" },
+    { c: 2, f: 6, name: "air_temp_2",              type: "airt",  zone: "none" },
+    { c: 2, f: 7, name: "air_humidity_2",          type: "airh",  zone: "none" },
+    { c: 2, f: 8, name: "soil_temp_6",             type: "soilt", zone: "none" },
+    // Canal 3 — 3453647
+    { c: 3, f: 1, name: "light_3",                 type: "light", zone: "none" },
+    { c: 3, f: 2, name: "air_temp_3",              type: "airt",  zone: "none" },
+    { c: 3, f: 3, name: "air_humidity_3",          type: "airh",  zone: "none" },
+    { c: 3, f: 4, name: "soil_temp_7",             type: "soilt", zone: "none" },
+    { c: 3, f: 5, name: "soil_temp_8",             type: "soilt", zone: "none" },
+    { c: 3, f: 6, name: "soil_temp_9",             type: "soilt", zone: "none" },
+    { c: 3, f: 7, name: "soil_moisture_sen0308_3", type: "moist", zone: "none" },
+    { c: 3, f: 8, name: "soil_moisture_ks0510_3",  type: "moist", zone: "none" },
+    // Canal 4 — 3453736
+    { c: 4, f: 1, name: "soil_moisture_ks0510_4",  type: "moist", zone: "none" },
+    { c: 4, f: 2, name: "Irrigation",              type: "sys",   zone: "none", label: "Irrigação", step: true },
+    { c: 4, f: 3, name: "RTC Temperature",         type: "sys",   zone: "none", label: "Temperatura do RTC" },
+    { c: 4, f: 4, name: "Battery",                 type: "sys",   zone: "none", label: "Bateria" }
+  ];
+
+  // Ordem padrão dentro de cada faixa: por tipo, depois pelo nome do sensor
+  const TYPE_ORDER = ["moist", "soilt", "airt", "airh", "light", "sys"];
+  // =========================================================
+
+  const LS_KEY = "hortasolar_painel_layout_" + VERSION;
+  const $ = (sel, root) => (root || document).querySelector(sel);
+
+  // --- Dados de cada gráfico ---
+  const charts = FIELDS.map(d => {
+    const short = d.name.replace(/^soil_moisture_/, "");
+    const label = d.label || (TYPES[d.type].label + " · " + short);
+    return Object.assign({}, d, {
+      id: CH[d.c] + "-" + d.f,
+      ch: CH[d.c],
+      short: short,
+      title: label
+    });
+  });
+  const natural = (a, b) => a.localeCompare(b, "pt", { numeric: true });
+  charts.sort((a, b) => {
+    const t = TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type);
+    if (t) return t;
+    if (a.type === "sys") return a.c - b.c || a.f - b.f;
+    return natural(a.short, b.short);
+  });
+  const byId = Object.fromEntries(charts.map(c => [c.id, c]));
+
+  function chartSrc(c) {
+    const p = new URLSearchParams({
+      bgcolor: "#ffffff",
+      color: c.color || TYPES[c.type].color,
+      dynamic: "true",
+      update: String(UPDATE_S),
+      days: String(DAYS),
+      results: String(RESULTS),
+      type: "line",
+      width: "auto",
+      height: "auto",
+      title: c.title,
+      yaxis: c.name,
+      xaxis: "Data"
+    });
+    if (c.step) p.set("step", "true");
+    return "https://thingspeak.com/channels/" + c.ch + "/charts/" + c.f + "?" + p.toString();
+  }
+
+  // --- Montagem das faixas ---
+  const zonesRoot = $("#zones");
+  const zoneEls = {};
+  ZONES.forEach(z => {
+    const sec = document.createElement("section");
+    sec.className = "zone";
+    sec.dataset.zone = z.id;
+    sec.innerHTML =
+      '<div class="zone-head">' +
+        '<button type="button" class="toggle" aria-expanded="true" title="Recolher / expandir">▾</button>' +
+        "<h2></h2><span class=\"desc\"></span><span class=\"count\"></span>" +
+      "</div>" +
+      '<div class="grid"></div>';
+    $("h2", sec).textContent = z.name;
+    $(".desc", sec).textContent = "— " + z.desc;
+    $(".toggle", sec).setAttribute("aria-label", "Recolher " + z.name);
+    zonesRoot.appendChild(sec);
+    zoneEls[z.id] = { sec: sec, grid: $(".grid", sec), count: $(".count", sec), toggle: $(".toggle", sec) };
+    $(".toggle", sec).addEventListener("click", () => { setCollapsed(z.id, !sec.classList.contains("collapsed")); save(); });
+  });
+
+  function setCollapsed(zoneId, collapsed) {
+    const z = zoneEls[zoneId];
+    if (!z) return;
+    z.sec.classList.toggle("collapsed", collapsed);
+    z.toggle.textContent = collapsed ? "▸" : "▾";
+    z.toggle.setAttribute("aria-expanded", String(!collapsed));
+  }
+
+  // --- Cartões ---
+  const cardEls = {};
+  charts.forEach(c => {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.dataset.id = c.id;
+
+    const head = document.createElement("div");
+    head.className = "card-head";
+
+    const drag = document.createElement("div");
+    drag.className = "drag-area";
+    drag.draggable = true;
+    drag.title = "Arraste para mudar de faixa ou de posição";
+    drag.innerHTML = '<span class="handle" aria-hidden="true">⠿</span><span class="chip"></span>' +
+                     '<div class="titles"><div class="title"></div><div class="meta"></div></div>';
+    $(".chip", drag).style.background = c.color || TYPES[c.type].color;
+    $(".title", drag).textContent = c.title;
+    $(".meta", drag).textContent = "Canal " + c.c + " (" + c.ch + ") · campo " + c.f;
+    drag.title = c.name + " — arraste para mudar de faixa ou de posição";
+
+    const sel = document.createElement("select");
+    sel.setAttribute("aria-label", "Mover " + c.title + " para");
+    sel.title = "Mover para";
+    ZONES.forEach(z => {
+      const o = document.createElement("option");
+      o.value = z.id; o.textContent = z.name;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", () => {
+      moveCard(c.id, sel.value, null);
+      save();
+      flash(c.title + " → " + zoneName(sel.value));
+    });
+
+    const open = document.createElement("a");
+    open.className = "open";
+    open.href = "https://thingspeak.com/channels/" + c.ch;
+    open.target = "_blank"; open.rel = "noopener";
+    open.title = "Abrir o canal " + c.ch + " no ThingSpeak";
+    open.setAttribute("aria-label", open.title);
+    open.textContent = "↗";
+
+    head.append(drag, sel, open);
+
+    const frame = document.createElement("iframe");
+    frame.title = c.title;
+    frame.loading = "lazy";
+    frame.style.height = CHART_H + "px";
+    frame.src = chartSrc(c);
+
+    card.append(head, frame);
+    cardEls[c.id] = card;
+  });
+
+  function zoneName(id) { const z = ZONES.find(z => z.id === id); return z ? z.name : id; }
+  function zoneOfCard(card) { const sec = card.closest(".zone"); return sec ? sec.dataset.zone : null; }
+
+  function moveCard(id, zoneId, beforeCard) {
+    const card = cardEls[id], z = zoneEls[zoneId];
+    if (!card || !z) return;
+    if (beforeCard === card) return;
+    // Não mexe no DOM se a posição não muda (evita recarregar o gráfico)
+    if (card.parentNode === z.grid) {
+      const next = card.nextElementSibling;
+      if ((beforeCard || null) === (next || null)) return;
+    }
+    z.grid.insertBefore(card, beforeCard || null);
+    $("select", card).value = zoneId;
+    refreshZones();
+  }
+
+  function refreshZones() {
+    ZONES.forEach(z => {
+      const el = zoneEls[z.id];
+      const n = el.grid.querySelectorAll(".card").length;
+      el.grid.classList.toggle("is-empty", n === 0);
+      el.count.textContent = n === 1 ? "1 gráfico" : n + " gráficos";
+    });
+  }
+
+  // --- Layout: padrão, salvar, carregar ---
+  function defaultLayout() {
+    const zones = {};
+    ZONES.forEach(z => { zones[z.id] = []; });
+    charts.forEach(c => { (zones[c.zone] || zones.none).push(c.id); });
+    return { version: VERSION, zones: zones, collapsed: [] };
+  }
+
+  function currentLayout() {
+    const zones = {};
+    ZONES.forEach(z => {
+      zones[z.id] = Array.from(zoneEls[z.id].grid.querySelectorAll(".card")).map(el => el.dataset.id);
+    });
+    const collapsed = ZONES.filter(z => zoneEls[z.id].sec.classList.contains("collapsed")).map(z => z.id);
+    return { version: VERSION, zones: zones, collapsed: collapsed };
+  }
+
+  function applyLayout(layout) {
+    const placed = new Set();
+    const zones = (layout && layout.zones) || {};
+    ZONES.forEach(z => {
+      (Array.isArray(zones[z.id]) ? zones[z.id] : []).forEach(id => {
+        if (cardEls[id] && !placed.has(id)) {
+          moveCard(id, z.id, null);
+          placed.add(id);
+        }
+      });
+    });
+    // Gráficos que não estavam no layout salvo vão para a faixa padrão
+    charts.forEach(c => { if (!placed.has(c.id)) moveCard(c.id, zoneEls[c.zone] ? c.zone : "none", null); });
+    const collapsed = new Set(Array.isArray(layout && layout.collapsed) ? layout.collapsed : []);
+    ZONES.forEach(z => setCollapsed(z.id, collapsed.has(z.id)));
+    refreshZones();
+  }
+
+  let storageOk = true;
+  function save() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(currentLayout())); }
+    catch (e) {
+      if (storageOk) flash("Este navegador não deixou guardar o layout. Use “Exportar layout” para não perder a organização.", 8000);
+      storageOk = false;
+    }
+  }
+  function loadSaved() {
+    try {
+      const s = localStorage.getItem(LS_KEY);
+      return s ? JSON.parse(s) : null;
+    } catch (e) { storageOk = false; return null; }
+  }
+
+  // --- Mensagens curtas no cabeçalho ---
+  let toastTimer = null;
+  function flash(msg, ms) {
+    const t = $("#toast");
+    t.textContent = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.textContent = ""; }, ms || 3500);
+  }
+
+  // --- Arrastar e soltar ---
+  const indicator = $("#indicator");
+  let dragId = null;
+  let dropTarget = null; // { zoneId, before: elemento cartão ou null }
+
+  document.addEventListener("dragstart", e => {
+    const area = e.target.closest && e.target.closest(".drag-area");
+    if (!area) return;
+    const card = area.closest(".card");
+    dragId = card.dataset.id;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragId);
+    try { e.dataTransfer.setDragImage(area, 16, 16); } catch (_) {}
+    document.body.classList.add("dragging");
+    requestAnimationFrame(() => { card.classList.add("drag-src"); });
+  });
+
+  function cardUnder(grid, x, y) {
+    const cards = grid.querySelectorAll(".card");
+    for (const el of cards) {
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return el;
+    }
+    return null;
+  }
+
+  function computeTarget(sec, x, y) {
+    const zoneId = sec.dataset.zone;
+    if (sec.classList.contains("collapsed")) return { zoneId: zoneId, before: null, show: null };
+    const grid = zoneEls[zoneId].grid;
+    const over = cardUnder(grid, x, y);
+    if (!over) return { zoneId: zoneId, before: null, show: null };
+    const r = over.getBoundingClientRect();
+    const after = x > r.left + r.width / 2;
+    return {
+      zoneId: zoneId,
+      before: after ? over.nextElementSibling : over,
+      show: { left: after ? r.right + 4 : r.left - 8, top: r.top, height: r.height }
+    };
+  }
+
+  function clearOver() {
+    document.querySelectorAll(".zone.over").forEach(s => s.classList.remove("over"));
+    indicator.style.display = "none";
+  }
+
+  zonesRoot.addEventListener("dragover", e => {
+    if (!dragId) return;
+    const sec = e.target.closest && e.target.closest(".zone");
+    if (!sec) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (!sec.classList.contains("over")) { clearOver(); sec.classList.add("over"); }
+    dropTarget = computeTarget(sec, e.clientX, e.clientY);
+    if (dropTarget.show) {
+      indicator.style.display = "block";
+      indicator.style.left = dropTarget.show.left + "px";
+      indicator.style.top = dropTarget.show.top + "px";
+      indicator.style.height = dropTarget.show.height + "px";
+    } else {
+      indicator.style.display = "none";
+    }
+  });
+
+  zonesRoot.addEventListener("drop", e => {
+    if (!dragId) return;
+    e.preventDefault();
+    const sec = e.target.closest && e.target.closest(".zone");
+    const t = sec ? computeTarget(sec, e.clientX, e.clientY) : dropTarget;
+    if (t) {
+      const id = dragId;
+      const from = zoneOfCard(cardEls[id]);
+      moveCard(id, t.zoneId, t.before);
+      save();
+      if (from !== t.zoneId) flash(byId[id].title + " → " + zoneName(t.zoneId));
+    }
+    endDrag();
+  });
+
+  function endDrag() {
+    if (dragId && cardEls[dragId]) cardEls[dragId].classList.remove("drag-src");
+    dragId = null; dropTarget = null;
+    document.body.classList.remove("dragging");
+    clearOver();
+  }
+  document.addEventListener("dragend", endDrag);
+
+  // Rolagem automática ao arrastar perto das bordas da janela
+  document.addEventListener("dragover", e => {
+    if (!dragId) return;
+    const top = $("header").getBoundingClientRect().bottom;
+    const edge = 90;
+    const speed = d => Math.round(12 + 48 * Math.min(1, Math.max(0, (edge - d) / edge)));
+    const dTop = e.clientY - top, dBottom = window.innerHeight - e.clientY;
+    if (dTop < edge) window.scrollBy(0, -speed(dTop));
+    else if (dBottom < edge) window.scrollBy(0, speed(dBottom));
+  });
+  window.addEventListener("scroll", () => { if (dragId) indicator.style.display = "none"; }, { passive: true });
+
+  // --- Botões ---
+  $("#btn-reload").addEventListener("click", () => {
+    document.querySelectorAll(".card iframe").forEach(f => { const s = f.src; f.src = "about:blank"; f.src = s; });
+    flash("Gráficos recarregados");
+  });
+
+  $("#btn-reset").addEventListener("click", () => {
+    if (!window.confirm("Voltar à distribuição original dos gráficos? A organização atual será substituída.")) return;
+    applyLayout(defaultLayout());
+    save();
+    flash("Layout padrão restaurado");
+  });
+
+  $("#btn-export").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(currentLayout(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "hortasolar_layout_" + VERSION + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    flash("Layout exportado");
+  });
+
+  const fileInput = $("#file-import");
+  $("#btn-import").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    file.text().then(txt => {
+      const data = JSON.parse(txt);
+      if (!data || typeof data.zones !== "object") throw new Error("formato");
+      applyLayout(data);
+      save();
+      flash("Layout importado");
+    }).catch(() => flash("Arquivo de layout inválido", 5000))
+      .finally(() => { fileInput.value = ""; });
+  });
+
+  // --- Textos ---
+  $("#sub").textContent =
+    "Últimos " + DAYS + " dias (até " + RESULTS + " pontos) · atualização automática a cada " +
+    (UPDATE_S >= 60 ? (UPDATE_S / 60) + " min" : UPDATE_S + " s") +
+    " · arraste pelo cabeçalho do gráfico para mudar de faixa";
+  $("#footer").innerHTML =
+    "Dados: ThingSpeak, canais públicos <code>" + Object.values(CH).join("</code>, <code>") + "</code>. " +
+    "A página precisa de internet para carregar os gráficos. A organização fica guardada neste navegador.";
+
+  // --- Início ---
+  applyLayout(loadSaved() || defaultLayout());
+})();
+</script>
+</body>
+</html>
